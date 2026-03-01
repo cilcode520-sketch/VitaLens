@@ -133,7 +133,11 @@ export default function CameraPage() {
 
   // ── Send to AI ───────────────────────────────
   const handleAnalyze = useCallback(async () => {
-    if (!capturedImage || !activeProfile) return
+    if (!capturedImage) return
+    if (!activeProfile) {
+      setApiError('請先到首頁建立個人檔案，才能分析飲食')
+      return
+    }
 
     setStage('analyzing')
     setApiError(null)

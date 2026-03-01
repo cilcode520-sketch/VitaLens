@@ -3,7 +3,7 @@
 // 強制動態渲染：需要 Supabase 即時資料，不可靜態預渲染
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProfiles } from '@/lib/hooks/useProfile'
 import { createClient } from '@/lib/supabase/client'
@@ -17,12 +17,54 @@ export default function HomePage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const { profiles, activeProfile, setActiveProfile, loading: profileLoading } =
+  const { profiles, activeProfile, setActiveProfile, loading: profileLoading, refetch: refetchProfiles } =
     useProfiles()
 
   const [todayLogs, setTodayLogs] = useState<IntakeLog[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [totalCalories, setTotalCalories] = useState(0)
+  const [creatingProfile, setCreatingProfile] = useState(false)
+
+  // ── Auto sign-in anonymously + create default profile ───────────
+  const ensureAuth = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      // Sign in anonymously so RLS works
+      await supabase.auth.signInAnonymously()
+    }
+  }, [supabase]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    ensureAuth()
+  }, [ensureAuth])
+
+  // ── Quick-create default profile (for first-time users) ─────────
+  const handleCreateDefaultProfile = useCallback(async () => {
+    setCreatingProfile(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        const { data } = await supabase.auth.signInAnonymously()
+        if (!data.user) throw new Error('無法建立匿名帳號')
+      }
+      const currentUser = (await supabase.auth.getUser()).data.user
+      if (!currentUser) throw new Error('取得用戶失敗')
+
+      const { error } = await supabase.from('profiles').insert({
+        user_id: currentUser.id,
+        name: '我',
+        type: 'self',
+        birth_year: new Date().getFullYear() - 30,
+        is_active: true,
+      })
+      if (error) throw error
+      await refetchProfiles()
+    } catch (err) {
+      console.error('Create profile error:', err)
+    } finally {
+      setCreatingProfile(false)
+    }
+  }, [supabase, refetchProfiles])
 
   // Fetch today's intake logs for active profile
   useEffect(() => {
@@ -130,6 +172,30 @@ export default function HomePage() {
 
       {/* ── Main Content ── */}
       <div className="flex-1 px-4 pt-4 pb-28 space-y-4">
+
+        {/* No profile prompt */}
+        {!profileLoading && profiles.length === 0 && (
+          <div className="ios-card p-6 text-center border-2 border-dashed border-violet-200">
+            <p className="text-4xl mb-3">👤</p>
+            <p className="text-sm font-semibold text-gray-700">尚未建立個人檔案</p>
+            <p className="text-xs text-gray-400 mt-1 mb-4">需要個人檔案才能記錄飲食與分析安全性</p>
+            <button
+              onClick={handleCreateDefaultProfile}
+              disabled={creatingProfile}
+              className="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-600
+                         text-white text-sm font-semibold rounded-2xl
+                         active:scale-95 transition-transform disabled:opacity-60"
+            >
+              {creatingProfile ? '建立中...' : '✦ 快速建立「我」的檔案'}
+            </button>
+            <Link
+              href="/profile/new"
+              className="block mt-2 text-xs text-violet-500 underline"
+            >
+              或自訂詳細設定
+            </Link>
+          </div>
+        )}
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 gap-3">

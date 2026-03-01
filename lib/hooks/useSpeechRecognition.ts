@@ -189,8 +189,10 @@ function mapSpeechError(error: string): string {
   switch (error) {
     case 'not-allowed':
       return '麥克風權限被拒絕，請在設定中允許使用麥克風'
+    case 'service-not-allowed':
+      return '語音辨識在此環境不可用（語音為選填，不影響拍照記錄）'
     case 'no-speech':
-      return '未偵測到語音，請靠近麥克風說話'
+      return ''   // Normal when user hasn't spoken
     case 'audio-capture':
       return '找不到麥克風裝置'
     case 'network':
@@ -198,6 +200,6 @@ function mapSpeechError(error: string): string {
     case 'aborted':
       return ''   // User-initiated abort, not an error
     default:
-      return `語音辨識錯誤：${error}`
+      return `語音辨識不可用（${error}），不影響拍照功能`
   }
 }
