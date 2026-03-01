@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
     const systemPrompt = buildSystemPrompt(profile as Profile)
     const userPrompt = buildUserPrompt(voiceTranscript, mealTime)
 
-    // ── 3. Call OpenAI GPT-4o with vision ──────────────────
-    const aiResult = await callOpenAI(
+    // ── 3. Call Gemini 1.5 Flash with vision ───────────────
+    const aiResult = await callGemini(
       systemPrompt,
       userPrompt,
       imageBase64 ?? null
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// OpenAI GPT-4o call
+// Gemini 1.5 Flash call (免費 tier：每天 1500 次)
 // ─────────────────────────────────────────────────────────────
 interface AIAnalysisResult {
   items: FoodItem[]
@@ -101,52 +101,61 @@ interface AIAnalysisResult {
   summary: string
 }
 
-async function callOpenAI(
+async function callGemini(
   systemPrompt: string,
   userPrompt: string,
   imageBase64: string | null
 ): Promise<AIAnalysisResult> {
-  const messages: object[] = [
-    { role: 'system', content: systemPrompt },
-    {
-      role: 'user',
-      content: imageBase64
-        ? [
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBase64}`,
-                detail: 'high',
-              },
-            },
-            { type: 'text', text: userPrompt },
-          ]
-        : userPrompt,
-    },
-  ]
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) throw new Error('GEMINI_API_KEY 未設定')
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+  const parts: object[] = []
+
+  // 圖片放在文字前面
+  if (imageBase64) {
+    parts.push({
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: imageBase64,
+      },
+    })
+  }
+
+  parts.push({ text: userPrompt })
+
+  const body = {
+    systemInstruction: {
+      parts: [{ text: systemPrompt }],
     },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages,
+    contents: [
+      {
+        role: 'user',
+        parts,
+      },
+    ],
+    generationConfig: {
+      responseMimeType: 'application/json',
       temperature: 0.2,
-      response_format: { type: 'json_object' },
-      max_tokens: 1024,
-    }),
-  })
+      maxOutputTokens: 1024,
+    },
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  )
 
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`OpenAI API 錯誤：${err}`)
+    throw new Error(`Gemini API 錯誤：${err}`)
   }
 
   const data = await res.json()
-  const content = data.choices?.[0]?.message?.content
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text
 
   if (!content) throw new Error('AI 未回傳結果')
 
