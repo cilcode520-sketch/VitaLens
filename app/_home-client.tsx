@@ -24,6 +24,7 @@ export default function HomePage() {
   const [logsLoading, setLogsLoading] = useState(false)
   const [totalCalories, setTotalCalories] = useState(0)
   const [creatingProfile, setCreatingProfile] = useState(false)
+  const [profileCreateError, setProfileCreateError] = useState<string | null>(null)
 
   // ── Auto sign-in anonymously + create default profile ───────────
   const ensureAuth = useCallback(async () => {
@@ -41,26 +42,30 @@ export default function HomePage() {
   // ── Quick-create default profile (for first-time users) ─────────
   const handleCreateDefaultProfile = useCallback(async () => {
     setCreatingProfile(true)
+    setProfileCreateError(null)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      // Ensure we have a session
+      let { data: { user } } = await supabase.auth.getUser()
       if (!user) {
-        const { data } = await supabase.auth.signInAnonymously()
+        const { data, error: anonError } = await supabase.auth.signInAnonymously()
+        if (anonError) throw new Error(`匿名登入失敗：${anonError.message}`)
         if (!data.user) throw new Error('無法建立匿名帳號')
+        user = data.user
       }
-      const currentUser = (await supabase.auth.getUser()).data.user
-      if (!currentUser) throw new Error('取得用戶失敗')
 
       const { error } = await supabase.from('profiles').insert({
-        user_id: currentUser.id,
+        user_id: user.id,
         name: '我',
         type: 'self',
         birth_year: new Date().getFullYear() - 30,
         is_active: true,
       })
-      if (error) throw error
+      if (error) throw new Error(`建立檔案失敗：${error.message}`)
       await refetchProfiles()
     } catch (err) {
-      console.error('Create profile error:', err)
+      const msg = err instanceof Error ? err.message : '未知錯誤'
+      setProfileCreateError(msg)
+      console.error('Create profile error:', msg)
     } finally {
       setCreatingProfile(false)
     }
@@ -188,6 +193,11 @@ export default function HomePage() {
             >
               {creatingProfile ? '建立中...' : '✦ 快速建立「我」的檔案'}
             </button>
+            {profileCreateError && (
+              <p className="mt-3 text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">
+                ❌ {profileCreateError}
+              </p>
+            )}
             <Link
               href="/profile/new"
               className="block mt-2 text-xs text-violet-500 underline"
