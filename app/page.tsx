@@ -1,5 +1,8 @@
 'use client'
 
+// 強制動態渲染：需要 Supabase 即時資料，不可靜態預渲染
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProfiles } from '@/lib/hooks/useProfile'

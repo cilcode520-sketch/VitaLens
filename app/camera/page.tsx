@@ -1,5 +1,8 @@
 'use client'
 
+// 強制動態渲染：此頁面需要相機/麥克風權限與 Supabase，不可靜態預渲染
+export const dynamic = 'force-dynamic'
+
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCamera } from '@/lib/hooks/useCamera'
