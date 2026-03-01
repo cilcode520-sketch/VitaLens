@@ -1,12 +1,11 @@
 'use client'
 
-// 強制動態渲染：此頁面需要相機/麥克風權限與 Supabase，不可靜態預渲染
+// 強制動態渲染：此頁面需要相機權限與 Supabase，不可靜態預渲染
 export const dynamic = 'force-dynamic'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCamera } from '@/lib/hooks/useCamera'
-import { useSpeechRecognition } from '@/lib/hooks/useSpeechRecognition'
 import { useProfiles } from '@/lib/hooks/useProfile'
 import { createClient } from '@/lib/supabase/client'
 import ProfileSwitcher from '@/components/ProfileSwitcher'
@@ -42,17 +41,6 @@ export default function CameraPage() {
     hasMultipleCameras,
   } = useCamera()
 
-  const {
-    transcript,
-    interimTranscript,
-    isListening,
-    isSupported: speechSupported,
-    error: speechError,
-    startListening,
-    stopListening,
-    resetTranscript,
-  } = useSpeechRecognition('zh-TW')
-
   const { profiles, activeProfile, setActiveProfile, loading: profileLoading } =
     useProfiles()
 
@@ -65,61 +53,26 @@ export default function CameraPage() {
 
   const shutterRef = useRef<HTMLButtonElement>(null)
 
-  // ── Start camera + mic on mount ─────────────
+  // ── Start camera on mount ────────────────────
   useEffect(() => {
     startCamera('environment').then(() => {
       setStage('preview')
-      if (speechSupported) startListening()
     })
 
     return () => {
       stopCamera()
-      stopListening()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Voice Intent Parsing ─────────────────────
-  // Detect profile switch from transcript
-  useEffect(() => {
-    if (!transcript || profiles.length < 2) return
-
-    const childKeywords = ['寶寶', '小孩', '孩子', '小寶', '兒子', '女兒', '給他', '給她']
-    const selfKeywords = ['我', '自己', '我吃']
-
-    const lowerText = transcript.toLowerCase()
-    const isChildIntent = childKeywords.some((k) => lowerText.includes(k))
-    const isSelfIntent = selfKeywords.some((k) => lowerText.includes(k))
-
-    if (isChildIntent) {
-      const childProfile = profiles.find((p) => p.type === 'child')
-      if (childProfile && activeProfile?.id !== childProfile.id) {
-        setActiveProfile(childProfile)
-      }
-    } else if (isSelfIntent) {
-      const selfProfile = profiles.find((p) => p.type === 'self')
-      if (selfProfile && activeProfile?.id !== selfProfile.id) {
-        setActiveProfile(selfProfile)
-      }
-    }
-
-    // Detect menstrual mention
-    const periodKeywords = ['生理期', '月經', '經期', '肚子痛', '經痛']
-    if (periodKeywords.some((k) => transcript.includes(k))) {
-      // This would trigger AI to prioritize iron/magnesium suggestions
-      // Stored in voiceNote and passed to AI
-    }
-  }, [transcript]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Capture Photo ────────────────────────────
   const handleCapture = useCallback(() => {
     const dataUrl = capturePhoto()
     if (!dataUrl) return
 
-    stopListening()
     setCapturedImage(dataUrl)
     setStage('captured')
     setApiError(null)
-  }, [capturePhoto, stopListening])
+  }, [capturePhoto])
 
   // ── Retake ───────────────────────────────────
   const handleRetake = useCallback(() => {
@@ -127,9 +80,7 @@ export default function CameraPage() {
     setAnalyzeResult(null)
     setApiError(null)
     setStage('preview')
-    resetTranscript()
-    if (speechSupported) startListening()
-  }, [resetTranscript, speechSupported, startListening])
+  }, [])
 
   // ── Send to AI ───────────────────────────────
   const handleAnalyze = useCallback(async () => {
@@ -151,7 +102,7 @@ export default function CameraPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64: base64,
-          voiceTranscript: transcript,
+          voiceTranscript: null,
           profileId: activeProfile.id,
           mealTime,
         }),
@@ -173,7 +124,7 @@ export default function CameraPage() {
       setApiError(err instanceof Error ? err.message : '未知錯誤')
       setStage('captured') // Go back to confirm stage
     }
-  }, [capturedImage, activeProfile, transcript, mealTime])
+  }, [capturedImage, activeProfile, mealTime])
 
   // ── Save to Supabase ─────────────────────────
   const handleSave = useCallback(async () => {
@@ -200,7 +151,7 @@ export default function CameraPage() {
         items: analyzeResult.items,
         nutrients: analyzeResult.nutrients,
         safety_flags: analyzeResult.safety_flags,
-        voice_note: transcript || null,
+        voice_note: null,
         image_url: uploadError ? null : filename,
         ai_response: analyzeResult,
       })
@@ -216,7 +167,7 @@ export default function CameraPage() {
       setApiError(err instanceof Error ? err.message : '儲存失敗')
       setStage('result') // Back to result so user can retry
     }
-  }, [analyzeResult, activeProfile, capturedImage, mealTime, transcript, supabase, router])
+  }, [analyzeResult, activeProfile, capturedImage, mealTime, supabase, router])
 
   // ── Render ────────────────────────────────────
   return (
@@ -225,7 +176,7 @@ export default function CameraPage() {
       {/* ── Top Bar ── */}
       <div className="relative z-20 flex items-center justify-between px-4 pt-safe-top pt-4 pb-2">
         <button
-          onClick={() => { stopCamera(); stopListening(); router.push('/') }}
+          onClick={() => { stopCamera(); router.push('/') }}
           className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm
                      flex items-center justify-center text-white active:scale-90 transition-transform"
         >
@@ -430,32 +381,15 @@ export default function CameraPage() {
           {/* Meal time selector */}
           <MealTimeSelector value={mealTime} onChange={setMealTime} />
 
-          {/* Voice transcript display */}
-          <div className="min-h-[40px] mb-4 px-1">
-            {(transcript || interimTranscript) ? (
-              <div className="flex items-start gap-2">
-                <span className="text-white/60 text-sm mt-0.5">🎤</span>
-                <p className="text-white/90 text-sm leading-relaxed">
-                  {transcript}
-                  <span className="text-white/50">{interimTranscript}</span>
-                </p>
-              </div>
-            ) : (
-              <p className="text-white/30 text-sm text-center">
-                {speechSupported
-                  ? isListening ? '說出餐點或補充說明...' : '語音辨識已停止'
-                  : '此裝置不支援語音辨識'}
-              </p>
-            )}
-            {speechError && (
-              <p className="text-amber-400 text-xs mt-1 text-center">{speechError}</p>
-            )}
-          </div>
+          {/* API Error display */}
+          {apiError && (
+            <p className="text-amber-400 text-xs mb-3 text-center">{apiError}</p>
+          )}
 
           {/* Controls row */}
           <div className="flex items-center justify-center gap-10">
 
-            {/* Gallery / retake */}
+            {/* Retake button */}
             {stage === 'captured' ? (
               <button
                 onClick={handleRetake}
@@ -499,27 +433,8 @@ export default function CameraPage() {
               </button>
             )}
 
-            {/* Mic toggle */}
-            <button
-              onClick={isListening ? stopListening : startListening}
-              disabled={!speechSupported}
-              className={`w-12 h-12 rounded-full flex items-center justify-center
-                          active:scale-90 transition-all
-                          ${isListening
-                            ? 'bg-red-500 shadow-lg shadow-red-500/40'
-                            : 'bg-white/20'
-                          }
-                          ${!speechSupported ? 'opacity-30 cursor-not-allowed' : ''}`}
-            >
-              {isListening ? (
-                <MicWaveIcon className="w-6 h-6 text-white" />
-              ) : (
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round"
-                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
-                </svg>
-              )}
-            </button>
+            {/* Spacer (where mic button was) */}
+            <div className="w-12 h-12" />
           </div>
         </div>
       )}
@@ -563,18 +478,6 @@ function MealTimeSelector({
         </button>
       ))}
     </div>
-  )
-}
-
-function MicWaveIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <rect x="2" y="9" width="2" height="6" rx="1" className="animate-[bounce_0.6s_ease-in-out_infinite]" />
-      <rect x="6" y="6" width="2" height="12" rx="1" className="animate-[bounce_0.6s_ease-in-out_0.1s_infinite]" />
-      <rect x="10" y="4" width="2" height="16" rx="1" className="animate-[bounce_0.6s_ease-in-out_0.2s_infinite]" />
-      <rect x="14" y="6" width="2" height="12" rx="1" className="animate-[bounce_0.6s_ease-in-out_0.3s_infinite]" />
-      <rect x="18" y="9" width="2" height="6" rx="1" className="animate-[bounce_0.6s_ease-in-out_0.4s_infinite]" />
-    </svg>
   )
 }
 
