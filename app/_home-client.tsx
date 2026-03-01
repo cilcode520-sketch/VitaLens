@@ -57,7 +57,6 @@ export default function HomePage() {
         user_id: user.id,
         name: '我',
         type: 'self',
-        birth_year: new Date().getFullYear() - 30,
         is_active: true,
       })
       if (error) throw new Error(`建立檔案失敗：${error.message}`)

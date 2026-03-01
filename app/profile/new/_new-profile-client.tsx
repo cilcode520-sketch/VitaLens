@@ -19,7 +19,6 @@ export default function NewProfileClient() {
 
   const [name, setName] = useState('')
   const [type, setType] = useState<ProfileType>('self')
-  const [birthYear, setBirthYear] = useState(String(new Date().getFullYear() - 30))
   const [healthTags, setHealthTags] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -60,7 +59,6 @@ export default function NewProfileClient() {
         user_id: userId,
         name: name.trim(),
         type,
-        birth_year: parseInt(birthYear) || new Date().getFullYear() - 30,
         health_tags: healthTags.filter(t => t !== '無特殊需求'),
         is_active: true,
       })
@@ -136,25 +134,6 @@ export default function NewProfileClient() {
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Birth Year */}
-        <div className="ios-card p-5">
-          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide block mb-3">
-            出生年份
-          </label>
-          <input
-            type="number"
-            value={birthYear}
-            onChange={e => setBirthYear(e.target.value)}
-            min="1920"
-            max={new Date().getFullYear()}
-            className="w-full text-base text-gray-900 bg-gray-50 rounded-xl px-4 py-3
-                       border border-gray-200 focus:outline-none focus:border-violet-400"
-          />
-          <p className="text-xs text-gray-400 mt-2">
-            用於計算年齡，調整營養建議
-          </p>
         </div>
 
         {/* Health Tags */}
